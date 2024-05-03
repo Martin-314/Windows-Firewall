@@ -39,8 +39,8 @@ This is the preferred way of packaging your application created with [flet](http
 ```commandline
 flet pack main.py --product-name name --product-version 1.0 --name "name" --icon "asserts\file.ico"
 ```
-
-
+## Preview.
+![Alt](/previews/preview.png)
 
 
 

@@ -3,11 +3,10 @@ import flet as ft
 import ipaddress
 import os
 import subprocess
-from flet_core import AlertDialog
+from flet_core import AlertDialog, FilledButton
 
 
 def main(page: ft.Page):
-
     def Load_splash():
         page.splash = ft.Image(src='assets/splash.png')
         page.update()
@@ -44,8 +43,7 @@ def main(page: ft.Page):
                         page.update()
 
                     elif 'The requested operation requires elevation' in r.stdout:
-                        page.dialog = ElevatePrivilege_Dialog
-                        ElevatePrivilege_Dialog.open = True
+                        permission_denied()
                         RemoteIP_Chip_Clicked(e)
                         page.update()
 
@@ -61,11 +59,73 @@ def main(page: ft.Page):
 
             validate_ip_address(IP_Address_TextField.value)
 
+    def Add_LocalIP_Rule(e):
+        if any(value is None for value in
+               (
+                       ActionDropdown.value, DirectionDropdown.value, IP_Address_TextField.value,
+                       AddFirewall_TextField.value)):
+            page.dialog = EmptyParameter_Dialog
+            EmptyParameter_Dialog.open = True
+            page.update()
+        else:
+            def validate_ip_address(ip_string):
+                try:
+                    ip_object = ipaddress.ip_address(ip_string)
+
+                    r = subprocess.run(
+                        args=['netsh', 'advfirewall', 'firewall', 'add', 'rule',
+                              f'name={AddFirewall_TextField.value}',
+                              f'action={ActionDropdown.value.lower()}',
+                              f'dir={DirectionDropdown.value.lower()}',
+                              f'localip={IP_Address_TextField.value}'],
+                        capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+
+                    if 'Ok' in r.stdout:
+                        page.dialog = Successful_Dialog
+                        Successful_Dialog.open = True
+                        LocalIP_Chip_Clicked(e)
+                        page.update()
+
+                    elif 'The requested operation requires elevation' in r.stdout:
+                        permission_denied()
+                        LocalIP_Chip_Clicked(e)
+                        page.update()
+
+                    elif 'One or more essential parameters' in r.stdout:
+                        page.dialog = EmptyParameter_Dialog
+                        EmptyParameter_Dialog.open = True
+                        page.update()
+
+                except ValueError:
+                    page.dialog = InvalidIP_Dialog
+                    InvalidIP_Dialog.open = True
+                    page.update()
+
+            validate_ip_address(IP_Address_TextField.value)
+
     def Reset_firewall(e):
-        print("reset done")
-        page.dialog = Successful_Dialog
-        Successful_Dialog.open = True
-        page.update()
+        backup_file: str = r'\backuppolicy.wfw'
+        if os.path.exists(backup_file):
+            os.remove(backup_file)
+
+        r = subprocess.run(
+            args=['netsh', 'advfirewall', 'firewall', 'reset', 'export', f'{desktop_path}{backup_file}'],
+            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+        )
+
+        if 'Ok' in r.stdout:
+            page.dialog = Successful_Dialog
+            Successful_Dialog.open = True
+            page.update()
+
+        elif 'The requested operation requires elevation' in r.stdout:
+            permission_denied()
+            page.update()
+
+        elif 'Cannot create a file when that file already exists.' in r.stdout:
+            general_failure()
+            page.update()
 
     def Add_Port_Rule(e):
         if any(value is None for value in
@@ -93,8 +153,7 @@ def main(page: ft.Page):
                 page.update()
 
             elif 'The requested operation requires elevation' in r.stdout:
-                page.dialog = ElevatePrivilege_Dialog
-                ElevatePrivilege_Dialog.open = True
+                permission_denied()
                 Port_Chip_Clicked(e)
                 page.update()
 
@@ -106,6 +165,9 @@ def main(page: ft.Page):
             elif 'One or more essential parameters' in r.stdout:
                 page.dialog = EmptyParameter_Dialog
                 EmptyParameter_Dialog.open = True
+                page.update()
+            else:
+                general_failure()
                 page.update()
 
     def Add_Program_Rule(e):
@@ -134,8 +196,7 @@ def main(page: ft.Page):
                 page.update()
 
             elif 'The requested operation requires elevation' in r.stdout:
-                page.dialog = ElevatePrivilege_Dialog
-                ElevatePrivilege_Dialog.open = True
+                permission_denied()
                 Program_Chip_Clicked(e)
                 page.update()
 
@@ -151,6 +212,9 @@ def main(page: ft.Page):
             if 'One or more essential parameters' in r.stdout:
                 page.dialog = EmptyParameter_Dialog
                 EmptyParameter_Dialog.open = True
+                page.update()
+            else:
+                general_failure()
                 page.update()
 
     def DeleteFirewall_Rule(e):
@@ -179,9 +243,11 @@ def main(page: ft.Page):
                 page.update()
 
             elif 'The requested operation requires elevation' in del_rule.stdout:
-                page.dialog = ElevatePrivilege_Dialog
-                ElevatePrivilege_Dialog.open = True
+                permission_denied()
                 RestoreFirewall_Fields()
+                page.update()
+            else:
+                general_failure()
                 page.update()
 
     def Backup_Firewall_Policy(e):
@@ -189,16 +255,15 @@ def main(page: ft.Page):
         Progress_Dialog.open = True
         page.update()
 
-        backup_file = f'{desktop_path}{policy_file}'
+        export_file = f'{desktop_path}{policy_file}'
 
-        if os.path.exists(backup_file):
-            os.remove(backup_file)
+        if os.path.exists(export_file):
+            os.remove(export_file)
 
         r = subprocess.run(
             args=['netsh', 'advfirewall', 'export', f'{desktop_path}{policy_file}'],
             capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
         )
-        # print(r.stdout)
 
         if 'Ok.' in r.stdout:
             Progress_Dialog.open = False
@@ -216,8 +281,11 @@ def main(page: ft.Page):
         elif 'The requested operation requires' in r.stdout:
             Progress_Dialog.open = False
             page.update()
-            page.dialog = ElevatePrivilege_Dialog
-            ElevatePrivilege_Dialog.open = True
+            permission_denied()
+            page.update()
+
+        else:
+            general_failure()
             page.update()
 
     def Show_DeleteFirewall_TextField(e):
@@ -231,15 +299,34 @@ def main(page: ft.Page):
     def pick_files_result(e: ft.FilePickerResultEvent):
         if e.files:
             ", ".join(map(lambda f: f.name, e.files))
-            # print(e.files[0].path)
             import_file = str(e.files[0].path)
+
             if not import_file.endswith('.wfw'):
-                print('invalid file')
+                page.dialog = InvalidFile_Dialog
+                InvalidFile_Dialog.open = True
+                page.update()
+            else:
+                r = subprocess.run(
+                    args=['netsh', 'advfirewall', 'import', f'{import_file}'],
+                    capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+                )
+
+                if 'Ok' in r.stdout:
+                    page.dialog = Successful_Dialog
+                    Successful_Dialog.open = True
+                    page.update()
+
+                elif 'The requested operation requires elevation' in r.stdout:
+                    permission_denied()
+                    page.update()
+                else:
+                    general_failure()
+                    page.update()
+
         else:
-            print("Cancelled!")
+            page.update()
 
     pick_files_dialog = ft.FilePicker(on_result=pick_files_result)
-
     page.overlay.append(pick_files_dialog)
 
     def RestoreFirewall_Fields():
@@ -355,8 +442,10 @@ def main(page: ft.Page):
         EmptyParameter_Dialog.open = False
         Successful_Dialog.open = False
         DeleteFirewall_Dialog.open = False
-        comfirmation_dialog.open = False
+        confirmation_dialog.open = False
         ResetFirewall_Dialog.open = False
+        GeneralFailure_Dialog.open = False
+        InvalidFile_Dialog.open = False
         page.update()
 
     def Delete_Cation(e):
@@ -369,6 +458,13 @@ def main(page: ft.Page):
         ResetFirewall_Dialog.open = True
         page.update()
 
+    def permission_denied():
+        page.dialog = ElevatePrivilege_Dialog
+        ElevatePrivilege_Dialog.open = True
+
+    def general_failure():
+        page.dialog = GeneralFailure_Dialog
+        GeneralFailure_Dialog.open = True
 
     ###########Dialogs########################
 
@@ -420,7 +516,7 @@ def main(page: ft.Page):
         ]
     )
 
-    comfirmation_dialog = ft.AlertDialog(
+    confirmation_dialog = ft.AlertDialog(
         title=ft.Row(
             controls=[
                 ft.Icon(
@@ -468,6 +564,36 @@ def main(page: ft.Page):
             ]
         ),
         content=ft.Text('Invalid IP'),
+        actions_alignment=ft.MainAxisAlignment.CENTER,
+        actions=[ft.TextButton(text="Dismiss", on_click=Close_Dialogs)]
+    )
+
+    GeneralFailure_Dialog = ft.AlertDialog(
+        title=ft.Row(
+            controls=[
+                ft.Icon(
+                    name=ft.icons.ERROR,
+                    color=ft.colors.RED_800, size=35
+                ),
+                ft.Text('Operation failed.')
+            ]
+        ),
+        content=ft.Text('Unable to perform operation.'),
+        actions_alignment=ft.MainAxisAlignment.CENTER,
+        actions=[ft.TextButton(text="Dismiss", on_click=Close_Dialogs)]
+    )
+
+    InvalidFile_Dialog = ft.AlertDialog(
+        title=ft.Row(
+            controls=[
+                ft.Icon(
+                    name=ft.icons.ERROR,
+                    color=ft.colors.RED_800, size=35
+                ),
+                ft.Text('Error.')
+            ]
+        ),
+        content=ft.Text('Invalid file type.'),
         actions_alignment=ft.MainAxisAlignment.CENTER,
         actions=[ft.TextButton(text="Dismiss", on_click=Close_Dialogs)]
     )
@@ -690,39 +816,39 @@ def main(page: ft.Page):
 
     RemoteIP_Chip = ft.Chip(
         label=ft.Text("Remote IP"),
-        bgcolor=ft.colors.INVERSE_PRIMARY,
+        # bgcolor=ft.colors.INVERSE_PRIMARY,
         disabled_color=ft.colors.SURFACE_VARIANT,
-        selected_color=ft.colors.PRIMARY_CONTAINER,
-        autofocus=True,
+        # selected_color=ft.colors.PRIMARY_CONTAINER,
+        autofocus=False,
         on_click=RemoteIP_Chip_Clicked,
-        # on_delete=amenity_unselected
     )
 
     LocalIP_Chip = ft.Chip(
         label=ft.Text("Local IP"),
-        bgcolor=ft.colors.INVERSE_PRIMARY,
+        # bgcolor=ft.colors.WHITE,
         disabled_color=ft.colors.SURFACE_VARIANT,
-        selected_color=ft.colors.BLUE_200,
-        autofocus=True,
+        # selected_color=ft.colors.BLUE_200,
+        autofocus=False,
         on_click=LocalIP_Chip_Clicked,
     )
 
     Port_Chip = ft.Chip(
         label=ft.Text("Port"),
-        bgcolor=ft.colors.BLUE_ACCENT_200,
+        # bgcolor=ft.colors.BLUE_ACCENT_200,
         disabled_color=ft.colors.SURFACE_VARIANT,
-        selected_color=ft.colors.BLUE_200,
-        autofocus=True,
+        # selected_color=ft.colors.BLUE_200,
+        autofocus=False,
         on_click=Port_Chip_Clicked,
-        # shape=ft.RoundedRectangleBorder(radius=6),
+        shape=ft.RoundedRectangleBorder(radius=6),
+
     )
 
     Program_Chip = ft.Chip(
         label=ft.Text("Program"),
-        bgcolor=ft.colors.BLUE_ACCENT_200,
+        # bgcolor=ft.colors.BLUE_ACCENT_200,
         disabled_color=ft.colors.SURFACE_VARIANT,
-        selected_color=ft.colors.BLUE_200,
-        autofocus=True,
+        # selected_color=ft.colors.BLUE_200,
+        autofocus=False,
         on_click=Program_Chip_Clicked,
     )
 
@@ -734,12 +860,12 @@ def main(page: ft.Page):
         on_click=Add_RemoteIP_Rule
     )
 
-    LocalIP_AddButton = ft.FilledButton(
+    LocalIP_AddButton: FilledButton = ft.FilledButton(
         height=50,
         width=75,
         text="Add",
         visible=False,
-        on_click=DeleteFirewall_Rule
+        on_click=Add_LocalIP_Rule
     )
 
     Port_AddButton = ft.FilledButton(
@@ -758,7 +884,7 @@ def main(page: ft.Page):
         on_click=Add_Program_Rule
     )
 
-    n = ft.Container(
+    add_rule_container = ft.Container(
         height=270, bgcolor=ft.colors.SURFACE_VARIANT, border_radius=10,
         padding=20,
         content=ft.Column(
@@ -796,7 +922,7 @@ def main(page: ft.Page):
         )
     )
 
-    l = ft.Container(
+    delete_rule_container = ft.Container(
         height=80, bgcolor=ft.colors.SURFACE_VARIANT, border_radius=10,
         padding=ft.padding.only(left=20, right=20),
         on_hover=Show_DeleteFirewall_TextField,
@@ -816,7 +942,7 @@ def main(page: ft.Page):
         )
     )
 
-    t = ft.Container(
+    export_policy_container = ft.Container(
         height=80, bgcolor=ft.colors.SURFACE_VARIANT, border_radius=10,
         padding=ft.padding.only(left=20, right=20),
         content=ft.Row(
@@ -828,7 +954,7 @@ def main(page: ft.Page):
         )
     )
 
-    y = ft.Container(
+    import_policy_container = ft.Container(
         height=80, bgcolor=ft.colors.SURFACE_VARIANT, border_radius=10,
         padding=ft.padding.only(left=20, right=20),
         content=ft.Row(
@@ -840,7 +966,7 @@ def main(page: ft.Page):
         )
     )
 
-    j = ft.Container(
+    reset_policy_container = ft.Container(
         height=80, bgcolor=ft.colors.SURFACE_VARIANT, border_radius=10,
         padding=ft.padding.only(left=20, right=20),
         # on_hover=Show_DeleteFirewall_TextField,
@@ -860,7 +986,13 @@ def main(page: ft.Page):
     )
 
     Load_splash()
-    page.add(n, l, t, y, j)
+    page.add(
+        add_rule_container,
+        delete_rule_container,
+        export_policy_container,
+        import_policy_container,
+        reset_policy_container
+    )
     page.window_min_width = 870
     # page.theme = ft.Theme(color_scheme_seed="green")
     # page.theme_mode = 'dark'
