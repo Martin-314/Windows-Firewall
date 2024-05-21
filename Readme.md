@@ -21,6 +21,23 @@ Run the script directly using python.
 ```commandline
 py main.py
 ```
+### Adding firewall rule.
+
+#### 1. One rule at a time.
+Clicking the desired chip will display the parameters required to set a firewall rule.
+
+#### 2. Multiple.
+To create a rule for multiple ip addresses create a text file with each address on a new line, for example.
+```commandline
+1.1.1.1
+192.168.1.1
+2.2.2.2
+10.10.10.10
+127.0.0.1
+```
+##### Note
+All addresses in the list should have the same set of actions to be taken against them i.e. A text file can
+have a list of local ip addresses from which all outbound traffic will be blocked. 
 
 ## Packaging 
 #### 1. Using auto-py-to-exe

@@ -5,6 +5,8 @@ import os
 import subprocess
 from flet_core import AlertDialog, FilledButton
 
+selected_file = None
+
 
 def main(page: ft.Page):
     def Load_splash():
@@ -322,7 +324,6 @@ def main(page: ft.Page):
                 else:
                     general_failure()
                     page.update()
-
         else:
             page.update()
 
@@ -353,6 +354,16 @@ def main(page: ft.Page):
         LocalIP_AddButton.visible = False
         Port_AddButton.visible = False
         Program_AddButton.visible = False
+        List_AddButton.visible = False
+        Chips_Row.visible = True
+        add_rule_container.height = 330
+        list_Row.visible = True
+        add_rule_divider.visible = True
+        List_CancelButton.visible = False
+        List_Row_Label.value = 'Custom Rule'
+        Browse_Button.visible = False
+        Custom_Button.visible = True
+        AddressTypeDropdown.visible = False
 
     def RemoteIP_Chip_Clicked(e):
         RestoreFirewall_Fields()
@@ -368,6 +379,7 @@ def main(page: ft.Page):
             LocalIP_Chip.disabled = True
             Port_Chip.disabled = True
             Program_Chip.disabled = True
+            hide_list_option()
             page.update()
         else:
             RestoreFirewall_Fields()
@@ -388,6 +400,7 @@ def main(page: ft.Page):
             RemoteIP_Chip.disabled = True
             Port_Chip.disabled = True
             Program_Chip.disabled = True
+            hide_list_option()
             page.update()
         else:
             RestoreFirewall_Fields()
@@ -408,6 +421,7 @@ def main(page: ft.Page):
             RemoteIP_Chip.disabled = True
             LocalIP_Chip.disabled = True
             Program_Chip.disabled = True
+            hide_list_option()
             page.update()
         else:
             RestoreFirewall_Fields()
@@ -428,6 +442,7 @@ def main(page: ft.Page):
             RemoteIP_Chip.disabled = True
             LocalIP_Chip.disabled = True
             Port_Chip.disabled = True
+            hide_list_option()
             page.update()
         else:
             RestoreFirewall_Fields()
@@ -465,6 +480,110 @@ def main(page: ft.Page):
     def general_failure():
         page.dialog = GeneralFailure_Dialog
         GeneralFailure_Dialog.open = True
+
+    def hide_list_option():
+        add_rule_container.height = 270
+        list_Row.visible = False
+        add_rule_divider.visible = False
+
+    def custom_button_clicked(e):
+        Chips_Row.visible = False
+        List_AddButton.visible = True
+        List_CancelButton.visible = True
+        ProtocolDropdown.visible = False
+        Path_TextField.visible = False
+        PortNumber_TextField.visible = False
+        SecurityDropdown.visible = False
+        DirectionDropdown.visible = True
+        IP_Address_TextField.visible = False
+        add_rule_container.height = 230
+        List_Row_Label.value = 'Select file'
+        Browse_Button.visible = True
+        Custom_Button.visible = False
+        AddressTypeDropdown.visible = True
+        page.update()
+
+    def select_ip_list(e: ft.FilePickerResultEvent):
+        global selected_file
+
+        if e.files:
+            ", ".join(map(lambda f: f.name, e.files))
+
+            selected_file = str(e.files[0].path)
+        else:
+            RestoreFirewall_Fields()
+            page.update()
+
+    select_ip_list_dialog = ft.FilePicker(on_result=select_ip_list)
+    page.overlay.append(select_ip_list_dialog)
+
+    def Add_Custom_Rule(e):
+        global selected_file
+        address_type_dict = {'Local': 'localip', 'Remote': 'remoteip'}
+        if any(value is None for value in
+               (ActionDropdown.value, DirectionDropdown.value,
+                AddFirewall_TextField.value, AddressTypeDropdown.value)) \
+                or selected_file is None:
+            page.dialog = EmptyParameter_Dialog
+            EmptyParameter_Dialog.open = True
+            page.update()
+        else:
+            print(selected_file)
+
+            if not selected_file.endswith('.txt'):
+                page.dialog = InvalidFile_Dialog
+                InvalidFile_Dialog.open = True
+                RestoreFirewall_Fields()
+                page.update()
+            else:
+                page.dialog = Progress_Dialog
+                Progress_Dialog.open = True
+                page.update()
+
+                with open(f'{selected_file}', 'r') as address_file:
+                    for line in address_file:
+                        ip_address = line.strip()
+
+                        r = subprocess.run(
+                            args=['netsh', 'advfirewall', 'firewall', 'add', 'rule',
+                                  f'name={AddFirewall_TextField.value}',
+                                  f'action={ActionDropdown.value.lower()}',
+                                  f'dir={DirectionDropdown.value.lower()}',
+                                  f'{address_type_dict[AddressTypeDropdown.value]}={ip_address}'],
+                            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+
+                        if 'Ok' in r.stdout:
+                            print(r.stdout)
+                            pass
+
+                        elif 'The requested operation requires elevation' in r.stdout:
+                            Progress_Dialog.open = False
+                            RestoreFirewall_Fields()
+                            page.update()
+                            permission_denied()
+                            page.update()
+                            return False
+                        elif 'Allow-Bypass action specified' in r.stdout:
+                            page.dialog = Successful_Dialog
+                            Successful_Dialog.open = True
+                            page.update()
+
+                        else:
+                            general_failure()
+                            page.update()
+                            return False
+
+                    Progress_Dialog.open = False
+                    RestoreFirewall_Fields()
+                    page.update()
+                    page.dialog = Successful_Dialog
+                    Successful_Dialog.open = True
+                    page.update()
+
+    def cancel_ip_list(e):
+        RestoreFirewall_Fields()
+        page.update()
 
     ###########Dialogs########################
 
@@ -796,6 +915,20 @@ def main(page: ft.Page):
             ft.dropdown.Option("Bypass"),
         ],
     )
+    AddressTypeDropdown = ft.Dropdown(
+        label="Address Type",
+        width=150,
+        height=50,
+        text_size=16,
+        border_radius=20,
+        border_width=2,
+        content_padding=10,
+        visible=False,
+        options=[
+            ft.dropdown.Option(key="Local"),
+            ft.dropdown.Option(key="Remote"),
+        ],
+    )
     SecurityDropdown = ft.Dropdown(
         label="Security",
         width=135,
@@ -884,20 +1017,62 @@ def main(page: ft.Page):
         on_click=Add_Program_Rule
     )
 
+    List_AddButton: FilledButton = ft.FilledButton(
+        height=50,
+        width=75,
+        text="Add",
+        visible=False,
+        on_click=Add_Custom_Rule
+    )
+
+    List_CancelButton = ft.ElevatedButton(
+        visible=False,
+        width=96,
+        height=50,
+        text="Cancel",
+        style=ft.ButtonStyle(color=ft.colors.WHITE, bgcolor=ft.colors.RED_500),
+        on_click=cancel_ip_list,
+    )
+
+    Chips_Row = ft.Row(
+        visible=True,
+        controls=[
+            LocalIP_Chip,
+            RemoteIP_Chip,
+            Port_Chip,
+            Program_Chip
+        ]
+    )
+
+    add_rule_divider = ft.Divider(visible=True)
+
+    Custom_Button = ft.FilledButton(text="Custom", on_click=custom_button_clicked, visible=True)
+
+    Browse_Button = ft.FilledButton(
+        text="Browse",
+        on_click=lambda _: select_ip_list_dialog.pick_files(allow_multiple=True),
+        visible=False
+    )
+    List_Row_Label = ft.Text(value='Custom Rule', tooltip='List of ip address in .txt file')
+
+    list_Row = ft.Row(
+        visible=True,
+        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+        controls=[
+            List_Row_Label,
+            Browse_Button,
+            Custom_Button
+        ]
+    )
+
     add_rule_container = ft.Container(
-        height=270, bgcolor=ft.colors.SURFACE_VARIANT, border_radius=10,
+        height=330, bgcolor=ft.colors.SURFACE_VARIANT, border_radius=10,
         padding=20,
+        animate=ft.animation.Animation(duration=350, curve=ft.AnimationCurve.DECELERATE),
         content=ft.Column(
             controls=[
                 ft.Text('Add Rule'),
-                ft.Row(
-                    controls=[
-                        LocalIP_Chip,
-                        RemoteIP_Chip,
-                        Port_Chip,
-                        Program_Chip
-                    ]
-                ),
+                Chips_Row,
                 ft.Container(height=10, border_radius=20),
                 ft.Row(
                     wrap=True,
@@ -912,12 +1087,17 @@ def main(page: ft.Page):
                         Path_TextField,
                         RemoteIP_AddButton,
                         LocalIP_AddButton,
+                        AddressTypeDropdown,
                         Port_AddButton,
-                        Program_AddButton
+                        Program_AddButton,
+                        List_CancelButton,
+                        List_AddButton,
 
                     ]
                 ),
-
+                ft.Container(height=10, border_radius=20),
+                add_rule_divider,
+                list_Row,
             ]
         )
     )
