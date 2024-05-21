@@ -528,8 +528,6 @@ def main(page: ft.Page):
             EmptyParameter_Dialog.open = True
             page.update()
         else:
-            print(selected_file)
-
             if not selected_file.endswith('.txt'):
                 page.dialog = InvalidFile_Dialog
                 InvalidFile_Dialog.open = True
@@ -554,7 +552,6 @@ def main(page: ft.Page):
                         )
 
                         if 'Ok' in r.stdout:
-                            print(r.stdout)
                             pass
 
                         elif 'The requested operation requires elevation' in r.stdout:
@@ -568,6 +565,7 @@ def main(page: ft.Page):
                             page.dialog = Successful_Dialog
                             Successful_Dialog.open = True
                             page.update()
+                            return False
 
                         else:
                             general_failure()
